@@ -45,6 +45,13 @@ services:
     restart: unless-stopped
     # порт наружу не нужен — доступ из сети compose
 
+  httpbin2:
+    image: mccutchen/go-httpbin:latest
+    ports:
+      - "12006:8080"
+    restart: unless-stopped
+    # новый стабильный httpbin на Go
+
   test_backend:
     build:
       context: ../tunnel-test-backend
