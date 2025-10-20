@@ -56,7 +56,8 @@ services:
     build:
       context: ../tunnel-test-backend
     restart: unless-stopped
-    # порт наружу не нужен
+    ports:
+      - "12007:8080"  # Expose for local testing
 
   client_test_backend_first:
     build:
