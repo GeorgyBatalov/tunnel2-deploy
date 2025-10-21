@@ -1,0 +1,46 @@
+name: tunnel2-infrastructure
+
+services:
+  vault:
+    image: hashicorp/vault:1.20
+    container_name: vault
+    user: "0:0"   # запускаем Vault ПОД root
+    entrypoint: [ "vault","server","-config=/vault/config/config.hcl" ]
+    ports:
+      - "8200:8200"    # UI+API наружу
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - vault-data:/vault/data
+      - ./vault/config.hcl:/vault/config/config.hcl:ro
+    restart: unless-stopped
+    networks:
+      - tunnel2-network
+
+  redis:
+    image: redis:7.4
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - tunnel2-network
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "15672:15672"   # UI
+      - "5672:5672"
+    restart: unless-stopped
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    networks:
+      - tunnel2-network
+
+volumes:
+  vault-data:
+
+networks:
+  tunnel2-network:
+    name: tunnel2-network
+    driver: bridge

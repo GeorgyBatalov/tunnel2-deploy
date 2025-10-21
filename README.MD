@@ -6,15 +6,51 @@
 - в будущем — Dev, Staging, Production окружения.
 
 ## Structure
-- `docker-compose-localhost.yml` — локальное окружение.
-- `env/` — шаблоны переменных окружения (секреты пустые).
-- `scripts/` — shell-скрипты для сборки, рестарта, деплоя.
-- `vault/` — конфиги и bootstrap для HashiCorp Vault.
+- `dev/` — конфигурации для локальной разработки
+  - `docker-compose-infrastructure.yml` — инфраструктурные сервисы (Vault, Redis, RabbitMQ)
+  - `docker-compose.yml` — приложения Tunnel2 и тестовые бэкенды
+  - `env/` — переменные окружения для dev
+  - `vault/` — конфигурация Vault для dev
+- `prod/` — конфигурации для production окружения (пока пустая)
+- `scripts/` — shell-скрипты для сборки, рестарта, деплоя
 
-## Build & Run Locally
+## Build & Run Locally (Development)
+
+### Первый запуск (или после полной остановки)
+
 ```bash
-docker compose -f docker-compose-localhost.yml up --build
+# 1. Запустить инфраструктурные сервисы (один раз)
+docker compose -f dev/docker-compose-infrastructure.yml up -d
+
+# 2. Инициализировать и распечатать Vault (один раз после первого запуска)
+# ... выполните vault operator init и vault operator unseal ...
+
+# 3. Запустить приложения Tunnel2
+docker compose -f dev/docker-compose.yml up -d --build
 ```
+
+### Обычная работа
+
+```bash
+# Пересобрать и перезапустить только приложения (Vault не трогается!)
+docker compose -f dev/docker-compose.yml up -d --build
+
+# Пересобрать только конкретный сервис
+docker compose -f dev/docker-compose.yml up -d --build tunnel_server
+
+# Остановить приложения (инфраструктура продолжает работать)
+docker compose -f dev/docker-compose.yml down
+
+# Полная остановка всего (включая Vault - потребуется unseal при следующем запуске)
+docker compose -f dev/docker-compose.yml down
+docker compose -f dev/docker-compose-infrastructure.yml down
+```
+
+**Преимущества такого подхода:**
+- Vault, Redis, RabbitMQ не перезапускаются при пересборке приложений
+- Vault остаётся распечатанным (unsealed) между пересборками
+- Быстрее пересборка - только изменённые сервисы
+- Чёткое разделение dev/prod окружений
 
 ## Configuration
 

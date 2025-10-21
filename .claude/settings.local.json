@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add docker-compose-localhost.yml)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd port mapping for test-backend (12007:8080)\n\nAdded external port 12007 for tunnel-test-backend to enable:\n- Local client connections for integration tests\n- Direct backend testing during development\n- Running tests with multiple backend sessions\n\nThis allows running integration tests with local tunnel clients\npointing to different backends via different SessionIds:\n- SessionId 11111111... → httpbin (port 12005)\n- SessionId 22222222... → test-backend (port 12007)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(docker compose -f docker-compose-localhost.yml stop test_backend)",
+      "Bash(kill 22756 22753)",
+      "Bash(dotnet run --project src/Tunnel.ClientApp/Tunnel.ClientApp.csproj -- --dev-session-id=22222222-2222-2222-2222-222222222222 --backend-host=localhost --backend-port=12007 --tunnel-host=localhost --tunnel-port=12002)",
+      "Bash(dotnet test --filter \"FullyQualifiedName~HttpMethodsTests&FullyQualifiedName~Head\" -c Release --logger \"console;verbosity=normal\")",
+      "Bash(dotnet test /Users/chefbot/RiderProjects/xtunnel/tunnel2-integration-tests/src/Tunnel.IntegrationTests/Tunnel.IntegrationTests.csproj --filter \"FullyQualifiedName~HttpMethodsTests&FullyQualifiedName~Head\" -c Release --logger \"console;verbosity=normal\")",
+      "Bash(awk '{print $2}')",
+      "Bash(xargs kill)",
+      "Bash(git add tunnel-test-backend/src/Tunnel.TestBackend/Program.cs)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nFix HEAD method support for /head-test and /status endpoints\n\nAdded HEAD method support to ensure proper HTTP semantics:\n\n1. /head-test endpoint:\n   - Changed from separate MapHead + MapGet to unified MapMethods\n   - Both HEAD and GET return same headers\n   - HEAD returns empty body, GET returns JSON body\n   - Fixes 3 failing tests in HttpMethodsTests\n\n2. /status/{code} endpoint:\n   - Added HEAD support alongside existing GET\n   - Allows HEAD requests to check status codes without body\n   - Fixes Head_on_missing_resource_should_return_404 test\n\nAll 4 HEAD tests now pass (previously 3 failed).\nPart of Priority 1 test coverage roadmap.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit -m \"$(cat <<''EOF''\nFix HEAD method support for /head-test and /status endpoints\n\nAdded HEAD method support to ensure proper HTTP semantics:\n\n1. /head-test endpoint:\n   - Changed from separate endpoints to unified MapMethods\n   - Both HEAD and GET return same headers\n   - HEAD returns empty body, GET returns JSON body\n   - Fixes 3 failing tests in HttpMethodsTests\n\n2. /status/{code} endpoint:\n   - Added HEAD support alongside existing GET\n   - Allows HEAD requests to check status codes without body\n   - Fixes Head_on_missing_resource_should_return_404 test\n\nAll 4 HEAD tests now pass (previously 3 failed).\nPart of Priority 1 test coverage roadmap.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
