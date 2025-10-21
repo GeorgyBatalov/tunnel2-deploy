@@ -39,14 +39,14 @@ services:
     restart: unless-stopped
 
   httpbin:
-    image: kennethreitz/httpbin
+    image: kennethreitz/httpbin:latest
     ports:
       - "12005:80"
     restart: unless-stopped
     # порт наружу не нужен — доступ из сети compose
 
   httpbin2:
-    image: mccutchen/go-httpbin:latest
+    image: mccutchen/go-httpbin:v2.18.3
     ports:
       - "12006:8080"
     restart: unless-stopped
@@ -60,17 +60,17 @@ services:
       - "12007:8080"  # Expose for local testing
 
   redis:
-    image: redis:7
+    image: redis:7.4
     ports:
       - "6379:6379"
     restart: unless-stopped
     # порт наружу не публикуем
 
   rabbitmq:
-    image: rabbitmq:3-management
+    image: rabbitmq:3.13-management
     ports:
       - "15672:15672"   # оставим только UI
-      - "5672:5672"  
+      - "5672:5672"
     restart: unless-stopped
     environment:
       - RABBITMQ_DEFAULT_USER=guest
