@@ -58,6 +58,23 @@ services:
     networks:
       - tunnel2-network
 
+  dns_server:
+    build:
+      context: ../../tunnel2-dns-server
+      dockerfile: Dockerfile
+    ports:
+      - "12053:53/udp"   # DNS UDP
+      - "12053:53/tcp"   # DNS TCP
+      - "12080:8080"     # Health check endpoint
+    restart: unless-stopped
+    env_file:
+      - ./env/dns_server.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - tunnel2-network
+
 volumes:
   vault-data:
   postgres-data:
