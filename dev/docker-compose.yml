@@ -11,7 +11,7 @@ services:
     env_file:
       - ./env/tunnel_server.env
     networks:
-      - tunnel2-network
+      - default
 
   tunnel_entry:
     build:
@@ -24,7 +24,7 @@ services:
     env_file:
       - ./env/tunnel_entry.env
     networks:
-      - tunnel2-network
+      - default
 
   httpbin:
     image: kennethreitz/httpbin:latest
@@ -32,15 +32,15 @@ services:
       - "12005:80"
     restart: unless-stopped
     networks:
-      - tunnel2-network
+      - default
 
   httpbin2:
-    image: mccutchen/go-httpbin:v2.18.3
+    image: mccutchen/go-httpbin:latest
     ports:
       - "12006:8080"
     restart: unless-stopped
     networks:
-      - tunnel2-network
+      - default
 
   test_backend:
     build:
@@ -49,8 +49,4 @@ services:
     ports:
       - "12007:8080"
     networks:
-      - tunnel2-network
-
-networks:
-  tunnel2-network:
-    external: true
+      - default
