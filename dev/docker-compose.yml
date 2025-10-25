@@ -15,7 +15,7 @@ services:
 
   tunnel_entry:
     build:
-      context: ../../tunnel-proxy-entry
+      context: ../../tunnel2-proxy-entry
       dockerfile: Dockerfile
     ports:
       - "12000:80"   # вход снаружи для тестов/трафика
@@ -44,7 +44,7 @@ services:
 
   test_backend:
     build:
-      context: ../../tunnel-test-backend
+      context: ../../tunnel2-test-backend
     restart: unless-stopped
     ports:
       - "12007:8080"
