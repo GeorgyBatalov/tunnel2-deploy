@@ -5,6 +5,8 @@ services:
     build:
       context: ../../tunnel2-server
       dockerfile: Dockerfile
+      secrets:
+        - github_token
     ports:
       - "12002:12002"
     restart: unless-stopped
@@ -17,6 +19,8 @@ services:
     build:
       context: ../../tunnel2-proxy-entry
       dockerfile: Dockerfile
+      secrets:
+        - github_token
     ports:
       - "12000:80"   # вход снаружи для тестов/трафика
       - "12001:12001"
@@ -28,6 +32,7 @@ services:
 
   httpbin:
     image: kennethreitz/httpbin:latest
+    command: gunicorn -b 0.0.0.0:80 httpbin:app -k gevent --workers 8 --worker-connections 1000
     ports:
       - "12005:80"
     restart: unless-stopped
@@ -42,3 +47,7 @@ services:
       - "12007:8080"
     networks:
       - default
+
+secrets:
+  github_token:
+    file: ../../tunnel2-server/.github_token
