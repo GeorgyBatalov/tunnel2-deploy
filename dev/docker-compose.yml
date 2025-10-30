@@ -13,7 +13,7 @@ services:
     env_file:
       - ./env/tunnel_server.env
     networks:
-      - default
+      - tunnel2-network
 
   tunnel_entry:
     build:
@@ -28,7 +28,7 @@ services:
     env_file:
       - ./env/tunnel_entry.env
     networks:
-      - default
+      - tunnel2-network
 
   httpbin:
     image: kennethreitz/httpbin:latest
@@ -37,7 +37,7 @@ services:
       - "12005:80"
     restart: unless-stopped
     networks:
-      - default
+      - tunnel2-network
 
   test_backend:
     build:
@@ -48,13 +48,13 @@ services:
     ports:
       - "12007:8080"
     networks:
-      - default
+      - tunnel2-network
 
 secrets:
   github_token:
     file: ../.github_token
 
 networks:
-  default:
+  tunnel2-network:
     name: tunnel2-network
     external: true
