@@ -1,4 +1,20 @@
+# Secrets and sensitive data
 .github_token
-.DS_Store
+vault-keys.json
+vault-cluster-*.json
+
+# Environment files
 .env
+
+# IDE files
+.idea/
+.vscode/
+*.user
+*.DotSettings.user
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
 *.log

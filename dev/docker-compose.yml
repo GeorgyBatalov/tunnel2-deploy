@@ -42,6 +42,8 @@ services:
   test_backend:
     build:
       context: ../../tunnel2-test-backend
+      secrets:
+        - github_token
     restart: unless-stopped
     ports:
       - "12007:8080"
@@ -50,4 +52,9 @@ services:
 
 secrets:
   github_token:
-    file: ../../tunnel2-server/.github_token
+    file: ../.github_token
+
+networks:
+  default:
+    name: tunnel2-network
+    external: true
