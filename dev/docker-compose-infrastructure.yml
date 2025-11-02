@@ -63,6 +63,7 @@ services:
       dockerfile: Dockerfile
       secrets:
         - github_token
+    container_name: tunnel2_dns_server
     ports:
       - "12053:53/udp"   # DNS UDP
       - "12053:53/tcp"   # DNS TCP
@@ -73,6 +74,22 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - tunnel2-network
+
+  dns_forwarder:
+    build:
+      context: ../../tunnel2-dns-forwarder
+      dockerfile: Dockerfile
+    container_name: tunnel2_dns_forwarder
+    ports:
+      - "15053:53/udp"   # DNS UDP (forwarder on different port)
+    restart: unless-stopped
+    env_file:
+      - ./env/dns_forwarder.env
+    depends_on:
+      dns_server:
+        condition: service_started
     networks:
       - tunnel2-network
 
