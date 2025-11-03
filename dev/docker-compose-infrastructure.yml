@@ -63,6 +63,7 @@ services:
       dockerfile: Dockerfile
       secrets:
         - github_token
+    container_name: tunnel2_dns_server
     ports:
       - "12053:53/udp"   # DNS UDP
       - "12053:53/tcp"   # DNS TCP
@@ -76,6 +77,90 @@ services:
     networks:
       - tunnel2-network
 
+  dns_forwarder:
+    build:
+      context: ../../tunnel2-dns-forwarder
+      dockerfile: Dockerfile
+    container_name: tunnel2_dns_forwarder
+    ports:
+      - "15053:53/udp"   # DNS UDP (forwarder on different port)
+    restart: unless-stopped
+    env_file:
+      - ./env/dns_forwarder.env
+    depends_on:
+      dns_server:
+        condition: service_started
+    networks:
+      - tunnel2-network
+
+  # ===== Logging Stack =====
+  opensearch:
+    image: opensearchproject/opensearch:2.11.1
+    container_name: tunnel2_opensearch
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - plugins.security.disabled=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"  # REST API
+      - "9600:9600"  # Performance Analyzer
+    restart: unless-stopped
+    networks:
+      - tunnel2-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.11.1
+    container_name: tunnel2_opensearch_dashboards
+    ports:
+      - "5601:5601"  # Dashboards UI
+    environment:
+      - OPENSEARCH_HOSTS=http://opensearch:9200
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - tunnel2-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  fluentbit:
+    image: fluent/fluent-bit:2.2
+    container_name: tunnel2_fluentbit
+    volumes:
+      - ./fluentbit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./fluentbit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - tunnel2-network
+
 secrets:
   github_token:
     file: ../.github_token
@@ -86,6 +171,8 @@ volumes:
     external: true
   postgres-data:
     name: tunnel2_postgres-data
+  opensearch-data:
+    name: tunnel2_opensearch-data
 
 networks:
   tunnel2-network:
