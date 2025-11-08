@@ -23,7 +23,8 @@ services:
         - github_token
     ports:
       - "12000:80"   # вход снаружи для тестов/трафика
-      - "12001:12001"
+      - "12001:12001"  # uplink port
+      - "40000-40099:40000-40099"  # TCP public ports (Phase 3)
     restart: unless-stopped
     env_file:
       - ./env/tunnel_entry.env
@@ -46,9 +47,67 @@ services:
         - github_token
     restart: unless-stopped
     ports:
-      - "12007:8080"
+      - "12007:8080"   # HTTP backend
+      - "12008:12008"  # TCP Echo Server (Phase 3)
     networks:
       - tunnel2-network
+
+  # Monitoring stack
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: tunnel2-otel-collector
+    restart: unless-stopped
+    ports:
+      - "4317:4317"  # OTLP gRPC receiver (for client metrics push)
+      - "4318:4318"  # OTLP HTTP receiver (alternative)
+      - "9464:9464"  # Prometheus exporter (for Prometheus scrape)
+    volumes:
+      - ./otel-collector/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    networks:
+      - tunnel2-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: tunnel2-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"  # Prometheus UI
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'  # Keep data for 15 days
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'  # Enable API to reload config
+    networks:
+      - tunnel2-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Allow Prometheus to scrape host metrics
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: tunnel2-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"  # Grafana UI
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    networks:
+      - tunnel2-network
+    depends_on:
+      - prometheus
 
 secrets:
   github_token:
@@ -58,3 +117,9 @@ networks:
   tunnel2-network:
     name: tunnel2-network
     external: true
+
+volumes:
+  prometheus-data:
+    name: tunnel2-prometheus-data
+  grafana-data:
+    name: tunnel2-grafana-data
