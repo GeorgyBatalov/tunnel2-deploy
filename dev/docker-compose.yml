@@ -22,8 +22,9 @@ services:
       secrets:
         - github_token
     ports:
-      - "12000:80"   # вход снаружи для тестов/трафика
-      - "12001:12001"
+      - "12000:80"   # HTTP entry point (external traffic)
+      - "12001:12001"   # Uplink port (client connections)
+      - "40000-40099:40000-40099"  # TCP public ports range (required for TCP integration tests)
     restart: unless-stopped
     env_file:
       - ./env/tunnel_entry.env
@@ -46,7 +47,8 @@ services:
         - github_token
     restart: unless-stopped
     ports:
-      - "12007:8080"
+      - "12007:8080"   # HTTP test backend
+      - "12008:12008"  # TCP Echo Server
     networks:
       - tunnel2-network
 
