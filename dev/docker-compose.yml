@@ -8,7 +8,8 @@ services:
       secrets:
         - github_token
     ports:
-      - "12002:12002"
+      - "12002:12002"  # TLS control-plane (client handshake, heartbeat)
+      - "12003:12003"  # HTTP API (client registration, health check)
     restart: unless-stopped
     env_file:
       - ./env/tunnel_server.env
