@@ -53,6 +53,34 @@ services:
     networks:
       - tunnel2-network
 
+  admin_api:
+    build:
+      context: ../../tunnel2-admin-api
+      dockerfile: Dockerfile
+    ports:
+      - "12009:12010"  # HTTP Admin API (external:internal)
+    restart: unless-stopped
+    environment:
+      - ConnectionStrings__Redis=redis:6379
+      - AdminApi__Host=0.0.0.0
+      - AdminApi__Port=12010
+    depends_on:
+      - tunnel_server
+    networks:
+      - tunnel2-network
+
+  admin_frontend:
+    build:
+      context: ../../tunnel2-admin-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "12011:80"  # HTTP Admin Frontend
+    restart: unless-stopped
+    depends_on:
+      - admin_api
+    networks:
+      - tunnel2-network
+
 secrets:
   github_token:
     file: ../.github_token
