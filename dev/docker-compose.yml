@@ -15,6 +15,7 @@ services:
       - ./env/tunnel_server.env
     networks:
       - tunnel2-network
+    # Phase 5: PostgreSQL connection via tunnel2-network (postgres service from infrastructure compose)
 
   tunnel_entry:
     build:
