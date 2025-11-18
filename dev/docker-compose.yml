@@ -16,6 +16,13 @@ services:
     networks:
       - tunnel2-network
     # Phase 5: PostgreSQL connection via tunnel2-network (postgres service from infrastructure compose)
+    # Phase 6: Health checks (/health/live for liveness, /health/ready for readiness)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:12003/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
 
   tunnel_entry:
     build:
