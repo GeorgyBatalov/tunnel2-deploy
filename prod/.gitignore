@@ -1,0 +1,23 @@
+# Production secrets - NEVER commit to git!
+.env
+
+# Vault data and keys
+vault/data/
+*.json
+
+# Grafana runtime data
+grafana/grafana.db
+grafana/*.db
+grafana/sessions/
+grafana/plugins/
+
+# Prometheus runtime data
+prometheus/data/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*~

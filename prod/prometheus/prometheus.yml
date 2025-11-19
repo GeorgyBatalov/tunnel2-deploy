@@ -1,0 +1,52 @@
+global:
+  scrape_interval: 5s  # Scrape metrics every 5 seconds (good for diagnostics)
+  evaluation_interval: 5s
+  # scrape_timeout is set to the global default (10s).
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: []
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
+rule_files:
+  - "rules/*.yml"
+
+# Scrape configuration for tunnel2-client metrics
+scrape_configs:
+  # Job: OpenTelemetry Collector (receives OTLP metrics from tunnel2-client)
+  - job_name: 'otel-collector'
+    static_configs:
+      # OTel Collector exposes Prometheus-compatible /metrics on port 9464
+      - targets: ['otel-collector:9464']
+        labels:
+          service: 'tunnel2-client'  # Metrics are from client, collected via OTLP
+          environment: 'dev'
+    honor_labels: true
+    honor_timestamps: true
+
+  # Job: Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          environment: 'dev'
+
+  # Phase 6: tunnel2-server Prometheus metrics (HTTP API on port 12003)
+  - job_name: 'tunnel2-server'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['tunnel_server:12003']
+        labels:
+          service: 'tunnel2-server'
+          environment: 'dev'
+
+  # Future: Add tunnel2-proxy-entry when it gets telemetry
+  # - job_name: 'tunnel2-proxy-entry'
+  #   static_configs:
+  #     - targets: ['tunnel_entry:8080']
+  #       labels:
+  #         service: 'tunnel2-proxy-entry'
+  #         environment: 'dev'
