@@ -39,7 +39,7 @@ services:
     container_name: tunnel2_entry
     ports:
       - "12000:80"      # HTTP entry point (will be behind Nginx reverse proxy)
-      - "40000-49999:40000-49999"  # TCP public ports range (10000 ports for TCP tunneling)
+      - "40000-40100:40000-40100"  # TCP public ports range (101 ports for TCP tunneling)
     restart: unless-stopped
     env_file:
       - ./env/tunnel_entry.env
