@@ -1,6 +1,9 @@
 # Production secrets - NEVER commit to git!
 .env
 
+# TLS certificates
+certs/
+
 # Vault data and keys
 vault/data/
 *.json

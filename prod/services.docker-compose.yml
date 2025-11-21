@@ -4,27 +4,23 @@ services:
   # ===== Core Services =====
 
   tunnel_server:
-    build:
-      context: ../../tunnel2-server
-      dockerfile: Dockerfile
-      secrets:
-        - github_token
+    image: ghcr.io/georgybatalov/tunnel2-server:release
     container_name: tunnel2_server
     ports:
       - "12002:12002"  # TLS control-plane (client handshake, heartbeat)
+      - "12001:12001"  # Uplink port (proxy-entry connections)
       - "12003:12003"  # HTTP API (client registration, health check, metrics)
     restart: unless-stopped
     env_file:
       - ./env/tunnel_server.env
+    volumes:
+      - ./certs/server.pfx:/app/server.pfx:ro
     networks:
       - tunnel2-network
-    depends_on:
-      - redis
-      - rabbitmq
-      - postgres
-    # Phase 6: Health checks (/health/live for liveness, /health/ready for readiness)
+      - tunnel  # For access to postgres
+    # Phase 6: Health checks (wget instead of curl - smaller image)
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:12003/health/live"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:12003/health/live"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -39,19 +35,16 @@ services:
           memory: 512M
 
   tunnel_entry:
-    build:
-      context: ../../tunnel2-proxy-entry
-      dockerfile: Dockerfile
-      secrets:
-        - github_token
+    image: ghcr.io/georgybatalov/tunnel-proxy-entry:release
     container_name: tunnel2_entry
     ports:
       - "12000:80"      # HTTP entry point (will be behind Nginx reverse proxy)
-      - "12001:12001"   # Uplink port (client connections)
       - "40000-49999:40000-49999"  # TCP public ports range (10000 ports for TCP tunneling)
     restart: unless-stopped
     env_file:
       - ./env/tunnel_entry.env
+    volumes:
+      - ./certs/server.pfx:/app/server.pfx:ro
     networks:
       - tunnel2-network
     depends_on:
@@ -133,11 +126,10 @@ services:
   #         cpus: '0.5'
   #         memory: 512M
 
-secrets:
-  github_token:
-    file: ../.github_token
-
 networks:
   tunnel2-network:
     name: tunnel2-network
     external: true    # Must be created by infrastructure compose first
+  tunnel:
+    name: tunnel
+    external: true    # Existing network for postgres access
