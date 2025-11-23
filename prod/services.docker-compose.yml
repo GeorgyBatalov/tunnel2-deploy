@@ -1,0 +1,135 @@
+name: tunnel2-prod
+
+services:
+  # ===== Core Services =====
+
+  tunnel_server:
+    image: ghcr.io/georgybatalov/tunnel2-server:release
+    container_name: tunnel2_server
+    ports:
+      - "12002:12002"  # TLS control-plane (client handshake, heartbeat)
+      - "12001:12001"  # Uplink port (proxy-entry connections)
+      - "12003:12003"  # HTTP API (client registration, health check, metrics)
+    restart: unless-stopped
+    env_file:
+      - ./env/tunnel_server.env
+    volumes:
+      - ./certs/server.pfx:/app/server.pfx:ro
+    networks:
+      - tunnel2-network
+      - tunnel  # For access to postgres
+    # Phase 6: Health checks (wget instead of curl - smaller image)
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:12003/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  tunnel_entry:
+    image: ghcr.io/georgybatalov/tunnel-proxy-entry:release
+    container_name: tunnel2_entry
+    ports:
+      - "12000:80"      # HTTP entry point (will be behind Nginx reverse proxy)
+      - "40000-40100:40000-40100"  # TCP public ports range (101 ports for TCP tunneling)
+    restart: unless-stopped
+    env_file:
+      - ./env/tunnel_entry.env
+    volumes:
+      - ./certs/server.pfx:/app/server.pfx:ro
+    networks:
+      - tunnel2-network
+    depends_on:
+      tunnel_server:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ===== Testing Backends (commented out for production) =====
+
+  # httpbin:
+  #   image: kennethreitz/httpbin:latest
+  #   command: gunicorn -b 0.0.0.0:80 httpbin:app -k gevent --workers 8 --worker-connections 1000
+  #   container_name: tunnel2_httpbin
+  #   ports:
+  #     - "12005:80"
+  #   restart: unless-stopped
+  #   networks:
+  #     - tunnel2-network
+
+  # test_backend:
+  #   build:
+  #     context: ../../tunnel2-test-backend
+  #     secrets:
+  #       - github_token
+  #   container_name: tunnel2_test_backend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "12007:8080"
+  #     - "12008:12008"
+  #   networks:
+  #     - tunnel2-network
+
+  # ===== Admin Services (commented out for Phase 1) =====
+
+  # admin_api:
+  #   build:
+  #     context: ../../tunnel2-admin-api
+  #     dockerfile: Dockerfile
+  #   container_name: tunnel2_admin_api
+  #   ports:
+  #     - "12009:12010"
+  #   restart: unless-stopped
+  #   environment:
+  #     - ConnectionStrings__Redis=redis:6379
+  #     - AdminApi__Host=0.0.0.0
+  #     - AdminApi__Port=12010
+  #   depends_on:
+  #     - tunnel_server
+  #   networks:
+  #     - tunnel2-network
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '1.0'
+  #         memory: 1G
+
+  # admin_frontend:
+  #   build:
+  #     context: ../../tunnel2-admin-frontend
+  #     dockerfile: Dockerfile
+  #   container_name: tunnel2_admin_frontend
+  #   ports:
+  #     - "12011:80"
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - admin_api
+  #   networks:
+  #     - tunnel2-network
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '0.5'
+  #         memory: 512M
+
+networks:
+  tunnel2-network:
+    name: tunnel2-network
+    external: true    # Must be created by infrastructure compose first
+  tunnel:
+    name: tunnel
+    external: true    # Existing network for postgres access

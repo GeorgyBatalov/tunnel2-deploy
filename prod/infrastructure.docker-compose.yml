@@ -1,0 +1,262 @@
+name: tunnel2-prod
+
+services:
+  # ===== Core Infrastructure =====
+
+  vault:
+    image: hashicorp/vault:1.20
+    container_name: tunnel2_vault
+    user: "0:0"
+    entrypoint: ["vault", "server", "-config=/vault/config/config.hcl"]
+    ports:
+      - "8201:8200"    # Vault UI+API (8201 to avoid conflict with existing Vault on 8200 if any)
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - vault-data:/vault/data
+      - ./vault/config.hcl:/vault/config/config.hcl:ro
+    restart: unless-stopped
+    networks:
+      - tunnel2-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--proxy", "off", "http://127.0.0.1:8200/v1/sys/health?standbyok=true"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  redis:
+    image: redis:7.4
+    container_name: tunnel2_redis
+    ports:
+      - "6380:6379"    # Redis on 6380 (6379 might be used by existing system)
+    restart: unless-stopped
+    networks:
+      - tunnel2-network
+      - tunnel    # Bridge to existing tunnel network for shared access
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: tunnel2_rabbitmq
+    ports:
+      - "15673:15672"   # Management UI (15673 to avoid conflict)
+      - "5673:5672"     # AMQP (5673 to avoid conflict)
+    restart: unless-stopped
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
+    networks:
+      - tunnel2-network
+      - tunnel    # Bridge to existing tunnel network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  postgres:
+    image: postgres:16.0
+    container_name: tunnel2_postgres
+    ports:
+      - "5433:5432"    # PostgreSQL on 5433 (5432 used by existing postgres)
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=tunnel2
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - tunnel2-network
+      - tunnel    # Bridge to existing tunnel network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d tunnel2"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===== Logging Stack =====
+
+  opensearch:
+    image: opensearchproject/opensearch:2.11.1
+    container_name: tunnel2_opensearch
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"    # Production: 1GB heap
+      - plugins.security.disabled=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "9201:9200"    # REST API (9201 to avoid conflict with existing Elasticsearch on 9200)
+      - "9601:9600"    # Performance Analyzer
+    restart: unless-stopped
+    networks:
+      - tunnel2-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.11.1
+    container_name: tunnel2_opensearch_dashboards
+    ports:
+      - "5602:5601"    # Dashboards UI (5602 to avoid conflict with Kibana on 5601)
+    environment:
+      - OPENSEARCH_HOSTS=http://opensearch:9200
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - tunnel2-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  fluentbit:
+    image: fluent/fluent-bit:2.2
+    container_name: tunnel2_fluentbit
+    volumes:
+      - ./fluentbit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./fluentbit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - tunnel2-network
+
+  # ===== Observability Stack =====
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: tunnel2_prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'    # Production: 30 days retention
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - "9091:9090"    # Prometheus UI (9091 to avoid conflict with tunnel_server on 9090)
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+    networks:
+      - tunnel2-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: tunnel2_grafana
+    ports:
+      - "3001:3000"    # Grafana UI (3001 to avoid conflict if existing Grafana on 3000)
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_SERVER_ROOT_URL=https://grafana.tunnel2.xtunnel.ru
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - tunnel2-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ===== DNS Services (commented out for Phase 1) =====
+
+  # dns_server:
+  #   build:
+  #     context: ../../tunnel2-dns-server
+  #     dockerfile: Dockerfile
+  #     secrets:
+  #       - github_token
+  #   container_name: tunnel2_dns_server
+  #   ports:
+  #     - "12053:53/udp"
+  #     - "12053:53/tcp"
+  #     - "12080:8080"
+  #   restart: unless-stopped
+  #   env_file:
+  #     - ./env/dns_server.env
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - tunnel2-network
+
+  # dns_forwarder:
+  #   build:
+  #     context: ../../tunnel2-dns-forwarder
+  #     dockerfile: Dockerfile
+  #   container_name: tunnel2_dns_forwarder
+  #   ports:
+  #     - "15053:53/udp"
+  #   restart: unless-stopped
+  #   env_file:
+  #     - ./env/dns_forwarder.env
+  #   depends_on:
+  #     - dns_server
+  #   networks:
+  #     - tunnel2-network
+
+secrets:
+  github_token:
+    file: ../.github_token
+
+volumes:
+  vault-data:
+    name: tunnel2_prod_vault-data
+  postgres-data:
+    name: tunnel2_prod_postgres-data
+  opensearch-data:
+    name: tunnel2_prod_opensearch-data
+  prometheus-data:
+    name: tunnel2_prod_prometheus-data
+  grafana-data:
+    name: tunnel2_prod_grafana-data
+
+networks:
+  tunnel2-network:
+    name: tunnel2-network
+    driver: bridge
+  tunnel:
+    external: true    # Connect to existing tunnel network (for shared Redis, RabbitMQ, PostgreSQL access)

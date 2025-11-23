@@ -1,0 +1,4 @@
+# Monitoring configs (optional - can be committed separately)
+grafana/
+otel-collector/
+prometheus/
