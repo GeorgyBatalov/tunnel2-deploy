@@ -214,6 +214,94 @@ vault-status:
 	@echo "🔐 Vault Status:"
 	@docker exec tunnel2_vault vault status || true
 
+# ===== Backup Management =====
+
+# Setup backup user (run once)
+backup-setup:
+	@echo "💾 Setting up PostgreSQL backup user..."
+	@cd scripts && ./setup_backup_user.sh
+
+# Configure rclone for Yandex.Disk (interactive)
+backup-config-rclone:
+	@echo "☁️  Configuring rclone for Yandex.Disk..."
+	@mkdir -p rclone
+	@docker run -it --rm -v $(PWD)/rclone:/config/rclone rclone/rclone:1.65 config
+	@chmod 600 rclone/rclone.conf
+	@echo -e "$(GREEN)✓$(NC) rclone configured"
+	@echo ""
+	@echo "Test connection: make backup-test-rclone"
+
+# Test rclone connection
+backup-test-rclone:
+	@echo "Testing rclone connection to Yandex.Disk..."
+	@docker run --rm -v $(PWD)/rclone:/config/rclone rclone/rclone:1.65 lsd yandex:
+	@echo -e "$(GREEN)✓$(NC) Connection successful"
+
+# Start backup services
+backup-up:
+	@echo "Starting backup services..."
+	@docker compose -f infrastructure.docker-compose.yml up -d postgres_backup rclone_upload
+	@echo -e "$(GREEN)✓$(NC) Backup services started"
+	@echo ""
+	@echo "Check logs: make backup-logs"
+
+# Stop backup services
+backup-down:
+	@echo "Stopping backup services..."
+	@docker compose -f infrastructure.docker-compose.yml stop postgres_backup rclone_upload
+	@echo -e "$(GREEN)✓$(NC) Backup services stopped"
+
+# Show backup logs
+backup-logs:
+	@echo "=== PostgreSQL Backup Logs ==="
+	@docker logs --tail=50 tunnel2_postgres_backup
+	@echo ""
+	@echo "=== Rclone Upload Logs ==="
+	@docker logs --tail=50 tunnel2_rclone_upload
+
+# Trigger backup manually (don't wait for schedule)
+backup-now:
+	@echo "Triggering manual backup..."
+	@docker exec tunnel2_postgres_backup /backup.sh
+	@echo ""
+	@echo "Check status: make backup-status"
+
+# Show backup status
+backup-status:
+	@echo "=== Local Backups ==="
+	@ls -lh backups/postgres/ 2>/dev/null || echo "No backups yet"
+	@echo ""
+	@echo "=== Yandex.Disk Backups ==="
+	@docker run --rm -v $(PWD)/rclone:/config/rclone rclone/rclone:1.65 ls yandex:xtunnel-backups 2>/dev/null || echo "No backups on Yandex.Disk yet"
+	@echo ""
+	@echo "=== Container Status ==="
+	@docker ps --filter "name=backup\|rclone" --format "table {{.Names}}\t{{.Status}}\t{{.State}}"
+
+# Test backup restore (creates temporary container)
+backup-test-restore:
+	@echo "⚠️  Testing backup restore (this will create a temporary PostgreSQL container)..."
+	@echo ""
+	@bash scripts/test_restore.sh
+
+# Clean old backups manually
+backup-clean:
+	@echo "Cleaning old local backups (>7 days)..."
+	@find backups/postgres/ -name "*.dump" -mtime +7 -delete
+	@echo -e "$(GREEN)✓$(NC) Old backups cleaned"
+
+# Full backup setup (interactive)
+backup-init: backup-setup backup-config-rclone backup-up
+	@echo ""
+	@echo -e "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@echo -e "$(GREEN)✅ Backup system initialized!$(NC)"
+	@echo -e "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. Test backup now: make backup-now"
+	@echo "  2. Check status: make backup-status"
+	@echo "  3. Test restore: make backup-test-restore"
+	@echo ""
+
 # Clean all containers and volumes (DANGEROUS!)
 clean:
 	@echo "⚠️  WARNING: This will remove all containers and volumes!"

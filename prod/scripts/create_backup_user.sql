@@ -1,0 +1,50 @@
+-- ============================================================================
+-- Create PostgreSQL Read-Only Backup User
+-- ============================================================================
+--
+-- This script creates a read-only user for backup purposes.
+-- The user has ONLY SELECT privileges and cannot modify data.
+--
+-- Usage:
+--   docker exec -i tunnel2_postgres psql -U tunnel -d tunnel2 < create_backup_user.sql
+--
+-- Security:
+--   - backup_user can ONLY read data (SELECT)
+--   - Cannot INSERT, UPDATE, DELETE, or DROP
+--   - Cannot create tables or modify schema
+--   - Safe to use for automated backups
+-- ============================================================================
+
+-- Note: Password should be set via environment variable POSTGRES_BACKUP_PASSWORD
+-- Generate secure password: openssl rand -base64 32
+
+-- Create backup user
+CREATE USER backup_user WITH PASSWORD :'BACKUP_PASSWORD';
+
+-- Grant connection to tunnel2 database
+GRANT CONNECT ON DATABASE tunnel2 TO backup_user;
+
+-- Grant usage on public schema
+GRANT USAGE ON SCHEMA public TO backup_user;
+
+-- Grant SELECT on all existing tables
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO backup_user;
+
+-- Grant SELECT on all future tables (important for Phase 7!)
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT ON TABLES TO backup_user;
+
+-- Grant SELECT on all existing sequences (needed for proper restore)
+GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO backup_user;
+
+-- Grant SELECT on all future sequences
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT ON SEQUENCES TO backup_user;
+
+-- Verification queries (run after user creation)
+-- \c tunnel2 backup_user
+-- SELECT COUNT(*) FROM pg_tables WHERE schemaname = 'public';  -- Should work
+-- INSERT INTO test_table VALUES (1);  -- Should fail with "permission denied"
+
+-- Show granted privileges
+\dp
