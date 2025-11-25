@@ -1,0 +1,48 @@
+name: tunnel2-backup
+
+services:
+  # PostgreSQL Backup Service
+  postgres_backup:
+    image: prodrigestivill/postgres-backup-local:16
+    container_name: tunnel2_postgres_backup
+    restart: unless-stopped
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=tunnel2
+      - POSTGRES_USER=${POSTGRES_BACKUP_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_BACKUP_PASSWORD}
+      - SCHEDULE=@daily              # Run at 00:00 UTC every day
+      - BACKUP_KEEP_DAYS=7           # Keep daily backups for 7 days
+      - BACKUP_KEEP_WEEKS=4          # Keep weekly backups for 4 weeks
+      - BACKUP_KEEP_MONTHS=0         # Don't keep monthly backups
+      - POSTGRES_EXTRA_OPTS=--format=custom --compress=9 --no-owner --no-acl
+      - HEALTHCHECK_PORT=8080
+    volumes:
+      - ./postgres:/backups
+    networks:
+      - tunnel2-network
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /backups/last_backup_status && cat /backups/last_backup_status | grep -q SUCCESS || exit 0"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # rclone Upload to Yandex.Disk
+  rclone_upload:
+    image: rclone/rclone:1.65
+    container_name: tunnel2_rclone_upload
+    restart: unless-stopped
+    depends_on:
+      - postgres_backup
+    volumes:
+      - ./postgres:/data:ro          # Read-only access to backup files
+      - ./rclone:/config/rclone:ro   # Read-only access to rclone config
+      - ./scripts/rclone_sync.sh:/rclone_sync.sh:ro
+    networks:
+      - tunnel2-network
+    entrypoint: ["/bin/sh", "/rclone_sync.sh"]
+
+networks:
+  tunnel2-network:
+    external: true
