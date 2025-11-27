@@ -65,6 +65,8 @@ services:
     build:
       context: ../../tunnel2-admin-api
       dockerfile: Dockerfile
+      secrets:
+        - github_token
     ports:
       - "12009:12010"  # HTTP Admin API (external:internal)
     restart: unless-stopped
