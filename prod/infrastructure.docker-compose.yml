@@ -246,10 +246,12 @@ services:
   jaeger:
     image: jaegertracing/all-in-one:1.53
     container_name: tunnel2_jaeger
-    ports:
-      - "16686:16686"  # Jaeger UI
-      - "14317:4317"   # OTLP gRPC receiver (mapped to 14317 externally)
-      - "14318:4318"   # OTLP HTTP receiver (mapped to 14318 externally)
+    # Jaeger UI (16686) and OTLP ports (4317, 4318) are NOT exposed externally for security
+    # Access Jaeger UI via SSH tunnel: ssh -L 16686:localhost:16686 user@server
+    # expose:
+    #   - "16686"  # Jaeger UI (internal only)
+    #   - "4317"   # OTLP gRPC (internal only)
+    #   - "4318"   # OTLP HTTP (internal only)
     environment:
       - COLLECTOR_OTLP_ENABLED=true
     restart: unless-stopped
