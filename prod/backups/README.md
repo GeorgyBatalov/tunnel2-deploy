@@ -1,328 +1,156 @@
-# PostgreSQL Backup System
+# Сервисы бэкапирования PostgreSQL - Production
 
-Автоматическая система резервного копирования PostgreSQL с загрузкой на Яндекс.Диск.
+## Обзор
 
-## Быстрый старт
-
-```bash
-# 1. Создать .env из примера
-cp .env.example .env
-# Отредактировать .env: заполнить пароли
-
-# 2. Создать backup_user в PostgreSQL
-./scripts/setup_backup_user.sh
-
-# 3. Настроить rclone для Яндекс.Диска
-./scripts/setup_rclone.sh
-
-# 4. Запустить контейнеры
-docker compose -f docker-compose-backup.yml up -d
-
-# 5. Проверить логи
-docker compose -f docker-compose-backup.yml logs -f
-```
+Автоматизированная система бэкапирования PostgreSQL с загрузкой в Yandex Object Storage (S3) для production инфраструктуры Tunnel2.
 
 ## Архитектура
 
-```
-PostgreSQL (tunnel2)
-    ↓ (backup_user: read-only)
-postgres_backup container
-    ↓ (pg_dump @ 00:00 UTC daily)
-./postgres/ (local storage)
-    ├── daily/   (7 days retention)
-    ├── weekly/  (4 weeks retention)
-    └── last/    (latest backup)
-    ↓ (rclone sync every 24h)
-Yandex.Disk
-    └── xtunnel-backups/ (30 days retention)
-```
+1. **postgres_backup** - Сервис посхедельного бэкапирования баз данных
+   - Создает отдельные pg_dump файлы для каждой из 28 production баз данных
+   - Запускается ежедневно в 00:00 UTC
+   - Retention: 7 дней, 4 недели, 0 месяцев
 
-## Структура файлов
+2. **rclone_s3_upload** - Сервис загрузки в S3
+   - Синхронизирует бэкапы в Yandex Object Storage каждые 24 часа
+   - Удаляет файлы старше 30 дней из облачного хранилища
+   - Использует протокол S3 (не WebDAV - в 166 раз быстрее!)
 
-```
-backups/
-├── .env.example           # Пример конфигурации
-├── .env                   # Ваша конфигурация (не коммитится)
-├── README.md
-├── docker-compose-backup.yml
-├── postgres/              # Локальные бэкапы (создается автоматически)
-├── rclone/                # rclone конфиг (создается автоматически)
-└── scripts/
-    ├── create_backup_user.sql
-    ├── setup_backup_user.sh
-    ├── setup_rclone.sh
-    ├── rclone_sync.sh
-    └── test_restore.sh
-```
+## Файлы конфигурации
 
-## Требования
+### Переменные окружения (не секретные)
+**Файл:** `tunnel2-deploy/prod/env/backups.env`
 
-1. Docker и Docker Compose
-2. Запущенный PostgreSQL контейнер с именем `postgres`
-3. Сеть `tunnel2-network` (должна существовать)
-4. Пароль приложения Яндекс.Диска: https://id.yandex.ru/security/app-passwords
+Содержит всю несекретную конфигурацию:
+- Настройки подключения к PostgreSQL (хост, пользователь)
+- Список 28 баз данных для бэкапирования
+- Расписание и политика хранения бэкапов
+- Endpoint и имя бакета Yandex Object Storage
 
-## Детальная инструкция
+### Учетные данные (секретные)
+**Файл:** `.env.backups.secret` (в корне проекта)
 
-### 1. Подготовка
+**ВНИМАНИЕ:** Этот файл исключен из git и содержит секретные учетные данные!
 
-```bash
-# Сгенерировать пароль для backup_user
-openssl rand -base64 32
+Содержит:
+- `POSTGRES_BACKUP_PASSWORD` - Пароль пользователя backup_user PostgreSQL
+- `YC_ACCESS_KEY_ID` - Yandex Cloud S3 Access Key ID
+- `YC_SECRET_ACCESS_KEY` - Yandex Cloud S3 Secret Access Key
 
-# Получить пароль приложения Яндекс:
-# https://id.yandex.ru/security/app-passwords
-```
+## Production деплой
 
-### 2. Настройка .env
+### Предварительные требования
+
+1. Убедитесь что `.env.backups.secret` существует в корне проекта с правильными учетными данными
+2. Пользователь PostgreSQL для бэкапов должен иметь разрешения:
+   ```sql
+   GRANT pg_read_all_data TO backup_user;
+   ALTER USER backup_user WITH REPLICATION;
+   ```
+
+### Запуск сервисов бэкапирования
 
 ```bash
-cp .env.example .env
-nano .env
+# Запуск всей инфраструктуры включая сервисы бэкапов
+cd tunnel2-deploy/prod
+docker compose -f infrastructure.docker-compose.yml up -d
+
+# Запуск только сервисов бэкапирования
+docker compose -f infrastructure.docker-compose.yml up -d postgres_backup rclone_s3_upload
 ```
 
-Заполнить:
-- `POSTGRES_BACKUP_PASSWORD` - сгенерированный пароль
-- `YANDEX_USERNAME` - ваш Яндекс логин
-- `YANDEX_APP_PASSWORD` - пароль приложения
-
-### 3. Создание backup_user
+### Мониторинг
 
 ```bash
-./scripts/setup_backup_user.sh
+# Логи сервиса бэкапирования
+docker logs tunnel2_postgres_backup -f
+
+# Логи сервиса загрузки
+docker logs tunnel2_rclone_s3_upload -f
+
+# Проверка файлов бэкапа на диске
+ls -lah tunnel2-deploy/prod/backups/postgres/
+
+# Проверка загрузки в Yandex Object Storage
+# Доступ через консоль Yandex Cloud: https://console.cloud.yandex.ru/
+# Бакет: xtunnel-backups
 ```
 
-Скрипт:
-- Создаст пользователя `backup_user` с read-only правами
-- Проверит что SELECT работает
-- Проверит что INSERT запрещен
-
-### 4. Настройка rclone
+### Ручной запуск бэкапа
 
 ```bash
-./scripts/setup_rclone.sh
+# Запустить немедленный бэкап (отправить SIGUSR1)
+docker exec tunnel2_postgres_backup sh -c 'kill -USR1 1'
+
+# Запустить немедленную загрузку
+docker restart tunnel2_rclone_s3_upload
 ```
 
-Скрипт:
-- Создаст `rclone.conf` для WebDAV подключения
-- Проверит подключение к Яндекс.Диску
-- Создаст папку `xtunnel-backups`
+## Список баз данных
 
-### 5. Запуск
+Система бэкапирует 28 production баз данных в режиме per-database:
 
-**Через docker compose (рекомендуется):**
+**Базы данных ChefBot (9):**
+- ChefBot-4a0243ecea614a48a9c4a73b2499416e
+- ChefBot-4de1ebb65c074ccaa5526fe0cccaf06b
+- ChefBot-646e5a6c41ac4f5886a2305ce98e0ac1
+- ChefBot-6e94dc757ef94d3f90fa57add8bbcf65
+- ChefBot-73b3d2c746664746a9b3ef8a67d605d8
+- ChefBot-ac1457931ae94dd7be84ce203bd28287
+- ChefBot-adc01aa637294e6c92c60034701ba694
+- ChefBot-bdc521d4248a4fe18516b5cdf463fda1
+- ChefBot-d0c5051cf4cd403da8db13e91e2bb50b
 
-```bash
-docker compose -f docker-compose-backup.yml up -d
-```
+**Базы данных ChefBotChatBot (9):**
+- ChefBotChatBot-4a0243ecea614a48a9c4a73b2499416e
+- ChefBotChatBot-4de1ebb65c074ccaa5526fe0cccaf06b
+- ChefBotChatBot-646e5a6c41ac4f5886a2305ce98e0ac1
+- ChefBotChatBot-6e94dc757ef94d3f90fa57add8bbcf65
+- ChefBotChatBot-73b3d2c746664746a9b3ef8a67d605d8
+- ChefBotChatBot-ac1457931ae94dd7be84ce203bd28287
+- ChefBotChatBot-adc01aa637294e6c92c60034701ba694
+- ChefBotChatBot-bdc521d4248a4fe18516b5cdf463fda1
+- ChefBotChatBot-d0c5051cf4cd403da8db13e91e2bb50b
 
-**Вручную (альтернатива):**
+**Остальные базы данных (10):**
+- ChefBotVendors
+- Tunnel
+- TunnelApi
+- TunnelApiHangfire
+- keycloak
+- keycloakchefbot
+- keycloakchefbotru
+- postgres
+- tunnel2
 
-```bash
-source .env
+## Производительность
 
-# Backup контейнер
-docker run -d \
-  --name tunnel2_postgres_backup \
-  --restart unless-stopped \
-  --network tunnel2-network \
-  -e POSTGRES_HOST=postgres \
-  -e POSTGRES_DB=tunnel2 \
-  -e POSTGRES_USER=$POSTGRES_BACKUP_USER \
-  -e POSTGRES_PASSWORD="$POSTGRES_BACKUP_PASSWORD" \
-  -e SCHEDULE=@daily \
-  -e BACKUP_KEEP_DAYS=7 \
-  -e BACKUP_KEEP_WEEKS=4 \
-  -e BACKUP_KEEP_MONTHS=0 \
-  -e POSTGRES_EXTRA_OPTS="--format=custom --compress=9 --no-owner --no-acl" \
-  -v $(pwd)/postgres:/backups \
-  prodrigestivill/postgres-backup-local:16
+### Сравнение WebDAV vs S3
 
-# rclone контейнер
-docker run -d \
-  --name tunnel2_rclone_upload \
-  --restart unless-stopped \
-  --network tunnel2-network \
-  -v $(pwd)/postgres:/data:ro \
-  -v $(pwd)/rclone:/config/rclone:ro \
-  -v $(pwd)/scripts/rclone_sync.sh:/rclone_sync.sh:ro \
-  --entrypoint=/bin/sh \
-  rclone/rclone:1.65 /rclone_sync.sh
-```
+**Старая настройка WebDAV (Yandex.Disk):**
+- Начальная скорость: 9 MB/s
+- Throttled скорость: 40 KB/s (сильный throttling после ~70 секунд)
+- Время загрузки 47 MB: ~20 минут
 
-## Проверка
+**Текущая настройка S3 (Yandex Object Storage):**
+- Стабильная скорость: 7-8 MB/s (без throttling)
+- Время загрузки 202 MB: ~26 секунд
+- **В 166 раз быстрее throttled WebDAV!**
 
-### Проверка статуса
+## Политика хранения
 
-```bash
-docker compose -f docker-compose-backup.yml ps
-```
+### Локальные бэкапы (на сервере)
+- Ежедневные: последние 7 дней
+- Еженедельные: последние 4 недели
+- Ежемесячные: 0 (отключено)
 
-### Проверка логов
-
-```bash
-# Все логи
-docker compose -f docker-compose-backup.yml logs -f
-
-# Только backup
-docker logs tunnel2_postgres_backup
-
-# Только rclone
-docker logs tunnel2_rclone_upload
-```
-
-### Ручной запуск backup
-
-```bash
-docker exec tunnel2_postgres_backup /backup.sh
-```
-
-### Проверка файлов
-
-```bash
-# Локально
-ls -lh postgres/daily/
-ls -lh postgres/last/
-
-# На Яндекс.Диске
-docker run --rm -v $(pwd)/rclone:/config/rclone \
-  rclone/rclone:1.65 size yandex:xtunnel-backups
-```
-
-### Тестовое восстановление
-
-```bash
-./scripts/test_restore.sh
-```
-
-## Расписание
-
-- **Backup:** Каждый день в 00:00 UTC
-- **Sync to Yandex:** Каждые 24 часа (после первого запуска)
-- **Cleanup:** При каждом sync (удаление файлов >30 дней)
-
-## Retention Policy
-
-### Локально (postgres/)
-- Daily: 7 дней
-- Weekly: 4 недели
-- Monthly: 0
-
-### Яндекс.Диск
-- Все файлы: 30 дней
-- Автоматическая очистка при каждом sync
-
-## Восстановление
-
-### Тестовое (безопасно)
-
-```bash
-./scripts/test_restore.sh
-```
-
-### Production (ОПАСНО!)
-
-**⚠️ Приведет к downtime сервиса!**
-
-```bash
-# 1. Остановить сервисы
-docker stop tunnel2_server tunnel2_entry
-
-# 2. Найти нужный backup
-ls -lh postgres/daily/
-
-# 3. Восстановить
-docker exec postgres dropdb -U tunnel tunnel2
-docker exec postgres createdb -U tunnel tunnel2
-docker exec postgres pg_restore -U tunnel -d tunnel2 \
-  /path/to/backup.sql.gz
-
-# 4. Пересоздать backup_user
-./scripts/setup_backup_user.sh
-
-# 5. Запустить сервисы
-docker start tunnel2_server tunnel2_entry
-```
-
-## Управление
-
-### Остановка
-
-```bash
-docker compose -f docker-compose-backup.yml down
-```
-
-### Перезапуск
-
-```bash
-docker compose -f docker-compose-backup.yml restart
-```
-
-### Обновление образов
-
-```bash
-docker compose -f docker-compose-backup.yml pull
-docker compose -f docker-compose-backup.yml up -d
-```
-
-## Troubleshooting
-
-### Backup контейнер unhealthy
-
-```bash
-# Проверить логи
-docker logs tunnel2_postgres_backup
-
-# Проверить файлы
-ls -la postgres/
-
-# Проверить подключение к БД
-docker exec tunnel2_postgres_backup \
-  psql -h postgres -U backup_user -d tunnel2 -c "SELECT 1;"
-```
-
-### rclone не может загрузить на Яндекс
-
-```bash
-# Проверить rclone config
-docker run --rm -v $(pwd)/rclone:/config/rclone \
-  rclone/rclone:1.65 config show
-
-# Протестировать подключение
-docker run --rm -v $(pwd)/rclone:/config/rclone \
-  rclone/rclone:1.65 lsd yandex:
-
-# Пересоздать конфиг
-./scripts/setup_rclone.sh
-```
-
-### Файл не восстанавливается (not in gzip format)
-
-Backup в **PostgreSQL custom format**, не в plain gzip!
-
-Используйте `pg_restore`, а не `gunzip`:
-
-```bash
-pg_restore -U tunnel -d tunnel2 backup.sql.gz
-```
+### Облачные бэкапы (Yandex Object Storage)
+- Файлы старше 30 дней автоматически удаляются
 
 ## Безопасность
 
-- ✅ backup_user имеет только SELECT права
-- ✅ rclone.conf с правами 600
-- ✅ Пароли в .env (не в git)
-- ✅ Яндекс.Диск через WebDAV (HTTPS)
-- ✅ Volumes в read-only режиме где возможно
-
-## Полная документация
-
-См. `docs/phases/phase-6-backup-production-guide.md`
-
-## Поддержка
-
-В случае проблем:
-1. Проверьте логи контейнеров
-2. Запустите `./scripts/test_restore.sh`
-3. Проверьте что .env заполнен корректно
-4. Убедитесь что сеть `tunnel2-network` существует
+- Учетные данные PostgreSQL используют сильный случайно сгенерированный пароль
+- Учетные данные S3 используют Yandex Cloud IAM ключи доступа
+- Файлы бэкапа хранятся с приватным ACL (не публичные)
+- Файл с учетными данными исключен из git
+- Все секреты загружаются из файла `.env.backups.secret`

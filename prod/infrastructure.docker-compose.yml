@@ -90,17 +90,21 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - ./env/backups.env
+      - ../../.env.backups.secret
     environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_DB=tunnel2
-      - POSTGRES_USER=${POSTGRES_BACKUP_USER:-backup_user}
+      - POSTGRES_HOST=${POSTGRES_BACKUP_HOST:-postgres}
+      - POSTGRES_USER=${POSTGRES_BACKUP_USER}
       - POSTGRES_PASSWORD=${POSTGRES_BACKUP_PASSWORD}
-      - SCHEDULE=@daily              # Run at 00:00 UTC every day
-      - BACKUP_KEEP_DAYS=7           # Keep daily backups for 7 days
-      - BACKUP_KEEP_WEEKS=4          # Keep weekly backups for 4 weeks
-      - BACKUP_KEEP_MONTHS=0         # Don't keep monthly backups
-      - POSTGRES_EXTRA_OPTS=--format=custom --compress=9 --no-owner --no-acl
-      - HEALTHCHECK_PORT=8080
+      # Per-database backup mode: Creates separate pg_dump files for each database
+      # Space or comma-separated list of all production databases
+      - POSTGRES_DB=${POSTGRES_BACKUP_DATABASES}
+      - SCHEDULE=${BACKUP_SCHEDULE:-@daily}
+      - BACKUP_KEEP_DAYS=${BACKUP_KEEP_DAYS:-7}
+      - BACKUP_KEEP_WEEKS=${BACKUP_KEEP_WEEKS:-4}
+      - BACKUP_KEEP_MONTHS=${BACKUP_KEEP_MONTHS:-0}
+      - POSTGRES_EXTRA_OPTS=${POSTGRES_BACKUP_EXTRA_OPTS:---no-owner --no-acl}
     volumes:
       - ./backups/postgres:/backups
     networks:
@@ -112,42 +116,61 @@ services:
       retries: 3
       start_period: 30s
 
-  rclone_upload:
-    image: rclone/rclone:1.65
-    container_name: tunnel2_rclone_upload
+  rclone_s3_upload:
+    image: rclone/rclone:latest
+    container_name: tunnel2_rclone_s3_upload
     restart: unless-stopped
     depends_on:
       - postgres_backup
+    env_file:
+      - ./env/backups.env
+      - ../../.env.backups.secret
     environment:
-      - RCLONE_CONFIG=/config/rclone/rclone.conf
-      - SYNC_INTERVAL=${BACKUP_SYNC_INTERVAL:-86400}     # Upload every 24 hours
-      - RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}      # Delete files older than 30 days
+      - SYNC_INTERVAL=${BACKUP_SYNC_INTERVAL:-86400}
+      - RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - S3_ENDPOINT=${YC_ENDPOINT}
+      - S3_REGION=${YC_REGION}
+      - S3_BUCKET=${YC_BUCKET}
+      - S3_ACCESS_KEY_ID=${YC_ACCESS_KEY_ID}
+      - S3_SECRET_ACCESS_KEY=${YC_SECRET_ACCESS_KEY}
     volumes:
-      - ./backups/postgres:/data:ro  # Read-only access to backup files
-      - ./rclone:/config/rclone:ro   # Read-only access to rclone config
+      - ./backups/postgres:/data:ro
     entrypoint: ["/bin/sh", "-c"]
     command: >
       while true; do
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] rclone: Starting upload to Yandex.Disk";
+        echo "[$(date)] rclone: Starting upload to Yandex Object Storage (S3)";
 
-        rclone sync /data yandex:xtunnel-backups
-          --config=/config/rclone/rclone.conf
+        rclone sync /data :s3:$$S3_BUCKET
+          --s3-provider=Other
+          --s3-endpoint=$$S3_ENDPOINT
+          --s3-region=$$S3_REGION
+          --s3-access-key-id=$$S3_ACCESS_KEY_ID
+          --s3-secret-access-key=$$S3_SECRET_ACCESS_KEY
+          --s3-acl=private
+          --s3-no-check-bucket
           --create-empty-src-dirs
           --log-level=INFO
           --stats=10s
-          && echo "[$(date '+%Y-%m-%d %H:%M:%S')] rclone: Upload SUCCESS"
-          || echo "[$(date '+%Y-%m-%d %H:%M:%S')] rclone: Upload FAILED!";
+          && echo "[$(date)] rclone: Upload SUCCESS"
+          || echo "[$(date)] rclone: Upload FAILED!";
 
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] rclone: Cleaning up old backups (>$$RETENTION_DAYS days)";
-        rclone delete yandex:xtunnel-backups
-          --config=/config/rclone/rclone.conf
+        echo "[$(date)] rclone: Cleaning up old backups (>$$RETENTION_DAYS days)";
+        rclone delete :s3:$$S3_BUCKET
+          --s3-provider=Other
+          --s3-endpoint=$$S3_ENDPOINT
+          --s3-region=$$S3_REGION
+          --s3-access-key-id=$$S3_ACCESS_KEY_ID
+          --s3-secret-access-key=$$S3_SECRET_ACCESS_KEY
+          --s3-no-check-bucket
           --min-age=$${RETENTION_DAYS}d
-          && echo "[$(date '+%Y-%m-%d %H:%M:%S')] rclone: Cleanup SUCCESS"
-          || echo "[$(date '+%Y-%m-%d %H:%M:%S')] rclone: Cleanup FAILED!";
+          && echo "[$(date)] rclone: Cleanup SUCCESS"
+          || echo "[$(date)] rclone: Cleanup FAILED!";
 
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] rclone: Next run in $$SYNC_INTERVAL seconds ($(( $$SYNC_INTERVAL / 3600 ))h).";
+        echo "[$(date)] rclone: Next run in $$SYNC_INTERVAL seconds ($(( $$SYNC_INTERVAL / 3600 ))h)";
         sleep $$SYNC_INTERVAL;
       done
+    networks:
+      - tunnel2-network
 
   # ===== Logging Stack =====
 
