@@ -13,8 +13,6 @@ services:
     restart: unless-stopped
     env_file:
       - ./env/tunnel_server.env
-    volumes:
-      - ./certs/server.pfx:/app/server.pfx:ro
     networks:
       - tunnel2-network
       - tunnel  # For access to postgres
@@ -43,8 +41,6 @@ services:
     restart: unless-stopped
     env_file:
       - ./env/tunnel_entry.env
-    volumes:
-      - ./certs/server.pfx:/app/server.pfx:ro
     networks:
       - tunnel2-network
     depends_on:
