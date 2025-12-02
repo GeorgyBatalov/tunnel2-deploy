@@ -33,12 +33,20 @@ services:
     ports:
       - "12000:80"   # HTTP entry point (external traffic)
       - "12001:12001"   # Uplink port (client connections)
+      - "8081:8080"  # Health check API (Phase 6)
       - "40000-40099:40000-40099"  # TCP public ports range (required for TCP integration tests)
     restart: unless-stopped
     env_file:
       - ./env/tunnel_entry.env
     networks:
       - tunnel2-network
+    # Phase 6: Health checks (/health/live for liveness, /health/ready for readiness)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
 
   httpbin:
     image: kennethreitz/httpbin:latest
