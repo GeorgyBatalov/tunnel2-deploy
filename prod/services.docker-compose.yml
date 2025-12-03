@@ -37,6 +37,7 @@ services:
     container_name: tunnel2_entry
     ports:
       - "12000:80"      # HTTP entry point (will be behind Nginx reverse proxy)
+      - "8080:8080"     # Health check API (Phase 6)
       - "40000-40100:40000-40100"  # TCP public ports range (101 ports for TCP tunneling)
     restart: unless-stopped
     env_file:
@@ -46,6 +47,13 @@ services:
     depends_on:
       tunnel_server:
         condition: service_healthy
+    # Phase 6: Health checks (wget instead of curl - smaller image)
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     deploy:
       resources:
         limits:
