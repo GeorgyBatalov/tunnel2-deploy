@@ -19,3 +19,4 @@ Thumbs.db
 # Logs
 *.log
 prod/Vault Unseal Key
+environments/vault.env
