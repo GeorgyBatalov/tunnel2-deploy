@@ -1,21 +1,24 @@
-# Tunnel2 Deploy
+# Tunnel2 Deploy - Development Environment
+
+**⚠️ DEVELOPMENT ONLY REPOSITORY - DO NOT USE IN PRODUCTION!**
+
+This repository contains **local development** deployment configuration for Tunnel2 project.
+
+**For production deployment use:** [tunnel2-deploy-prod](https://github.com/GeorgyBatalov/tunnel2-deploy-prod)
 
 ## Purpose
-Содержит скрипты и конфигурации для деплоя всех компонентов Tunnel2:
-- локально через docker-compose
-- в будущем — Dev, Staging, Production окружения
+Локальная разработка и тестирование всех компонентов Tunnel2 через docker-compose.
 
 ## Structure
-- `dev/` — конфигурации для локальной разработки
-  - `docker-compose-infrastructure.yml` — инфраструктурные сервисы (Vault, Redis, RabbitMQ, PostgreSQL, DNS Server)
-  - `docker-compose.yml` — приложения Tunnel2 и тестовые бэкенды
-  - `env/` — переменные окружения для сервисов
-  - `vault/` — конфигурация Vault
-- `prod/` — конфигурации для production (в разработке)
+- `docker-compose-infrastructure.yml` — инфраструктурные сервисы (Vault, Redis, RabbitMQ, PostgreSQL, DNS Server, OpenSearch, Fluent Bit)
+- `docker-compose.yml` — приложения Tunnel2 (server, proxy-entry) и тестовые бэкенды
+- `env/` — переменные окружения для сервисов
+- `vault/` — конфигурация Vault для dev среды
 - `scripts/` — автоматизированные скрипты деплоя
   - `start-all.sh` — полный деплой одной командой (запускает все сервисы + автоматически распечатывает Vault)
   - `stop-all.sh` — остановка всех сервисов
   - `vault-unseal.sh` — распечатка Vault
+- `grafana/`, `prometheus/`, `fluentbit/`, `otel-collector/` — конфигурации мониторинга и логирования
 - `.github_token` — GitHub Personal Access Token для NuGet пакетов (не коммитится)
 - `vault-keys.json` — ключи для распечатки Vault (не коммитится)
 
