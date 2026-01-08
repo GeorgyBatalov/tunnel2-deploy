@@ -3,7 +3,7 @@ name: tunnel2
 services:
   tunnel_server:
     build:
-      context: ../../tunnel2-server
+      context: ../tunnel2-server
       dockerfile: Dockerfile
       secrets:
         - github_token
@@ -26,7 +26,7 @@ services:
 
   tunnel_entry:
     build:
-      context: ../../tunnel2-proxy-entry
+      context: ../tunnel2-proxy-entry
       dockerfile: Dockerfile
       secrets:
         - github_token
@@ -60,7 +60,7 @@ services:
 
   test_backend:
     build:
-      context: ../../tunnel2-test-backend
+      context: ../tunnel2-test-backend
       secrets:
         - github_token
     restart: unless-stopped
@@ -72,7 +72,7 @@ services:
 
   admin_api:
     build:
-      context: ../../tunnel2-admin-api
+      context: ../tunnel2-admin-api
       dockerfile: Dockerfile
       secrets:
         - github_token
@@ -90,7 +90,7 @@ services:
 
   admin_frontend:
     build:
-      context: ../../tunnel2-admin-frontend
+      context: ../tunnel2-admin-frontend
       dockerfile: Dockerfile
     ports:
       - "12011:80"  # HTTP Admin Frontend
