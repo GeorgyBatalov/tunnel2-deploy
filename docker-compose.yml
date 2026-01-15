@@ -13,6 +13,19 @@ services:
     restart: unless-stopped
     env_file:
       - ./env/tunnel_server.env
+      - ./.env.secrets  # Secrets (DB, Redis, etc.) - Vault disabled
+    environment:
+      # RabbitMQ credentials (loaded from .env.secrets with correct prefixes)
+      - TUNNEL_Rabbit__HostName=rabbitmq
+      - TUNNEL_Rabbit__Port=5672
+      - TUNNEL_Rabbit__UserName=tunnel_app
+      - TUNNEL_Rabbit__Password=Ycd5GaUdQZ9mw3LJj5WnTYxA5vXCACQn
+      - TUNNEL_Rabbit__VirtualHost=/
+      - TUNNEL_Rabbit__Exchange=tunnel-events
+      - TUNNEL_Rabbit__UseSsl=false
+    volumes:
+      - ./certs:/app/certs:ro          # TLS certificates (PEM format)
+      - ./env/secrets:/app/secrets:ro  # JWT signing keys (PEM format)
     networks:
       - tunnel2-network
     # Phase 5: PostgreSQL connection via tunnel2-network (postgres service from infrastructure compose)
@@ -35,15 +48,19 @@ services:
       - "12001:12001"   # Uplink port (client connections)
       - "8081:8080"  # Health check API (Phase 6)
       - "20003:20003"  # Static TCP port for PROFESSIONAL_KEY_4_TEST (Phase 7.2)
-      - "40000-40099:40000-40099"  # TCP public ports range (required for TCP integration tests)
+      - "40000-40009:40000-40009"  # TCP public ports range (10 ports for faster deployment)
     restart: unless-stopped
     env_file:
       - ./env/tunnel_entry.env
+      - ./.env.secrets  # Secrets (RabbitMQ, Redis, etc.) - Vault disabled
+    volumes:
+      - ./certs:/app/certs:ro           # TLS certificates (PEM format)
+      - ./env/secrets:/app/secrets:ro   # JWT public key (PEM format)
     networks:
       - tunnel2-network
     # Phase 6: Health checks (/health/live for liveness, /health/ready for readiness)
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health/live"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -97,6 +114,21 @@ services:
     restart: unless-stopped
     depends_on:
       - admin_api
+    networks:
+      - tunnel2-network
+
+  cabinet_api:
+    build:
+      context: ../tunnel2-cabinet-api
+      dockerfile: Dockerfile
+    # Порты закомментированы - сервис доступен только внутри docker network
+    # ports:
+    #   - "12004:80"    # HTTP API (legacy tunnel API for licenses)
+    #   - "12006:9090"  # gRPC
+    restart: unless-stopped
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=tunnel2;Username=admin;Password=admin123
+      - ConnectionStrings__HangfireConnection=Host=postgres;Port=5432;Database=tunnel2;Username=admin;Password=admin123
     networks:
       - tunnel2-network
 

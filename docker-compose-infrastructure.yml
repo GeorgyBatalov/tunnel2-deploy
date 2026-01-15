@@ -1,21 +1,8 @@
 name: tunnel2
 
 services:
-  vault:
-    image: hashicorp/vault:1.20
-    container_name: vault
-    user: "0:0"   # запускаем Vault ПОД root
-    entrypoint: [ "vault","server","-config=/vault/config/config.hcl" ]
-    ports:
-      - "8200:8200"    # UI+API наружу
-    cap_add:
-      - IPC_LOCK
-    volumes:
-      - vault-data:/vault/data
-      - ./vault/config.hcl:/vault/config/config.hcl:ro
-    restart: unless-stopped
-    networks:
-      - tunnel2-network
+  # Vault removed - using .env.secrets and mounted files instead (dev environment)
+  # For production, consider re-enabling Vault or using a managed secrets service
 
   redis:
     image: redis:7.4
@@ -28,15 +15,47 @@ services:
 
   rabbitmq:
     image: rabbitmq:3.13-management
+    container_name: tunnel2_rabbitmq
     ports:
       - "15672:15672"   # UI
       - "5672:5672"
     restart: unless-stopped
+    env_file:
+      - ./.env.secrets
     environment:
-      - RABBITMQ_DEFAULT_USER=guest
-      - RABBITMQ_DEFAULT_PASS=guest
+      # Note: RABBITMQ_DEFAULT_USER and RABBITMQ_DEFAULT_PASS are loaded from .env.secrets
+      # env_file loads: RABBITMQ_ADMIN_USER -> rename needed
+      # Workaround: set directly in container via env renaming
+      - RABBITMQ_DEFAULT_USER=tunnel_admin
+      - RABBITMQ_DEFAULT_PASS=bBKG+EyU+g7FBS7h4YzSdzFZjJtTsQsA
     networks:
       - tunnel2-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq_init:
+    image: rabbitmq:3.13-management
+    container_name: tunnel2_rabbitmq_init
+    env_file:
+      - ./.env.secrets
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - tunnel2-network
+    restart: "no"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Waiting for RabbitMQ to be ready..."
+        sleep 5
+        echo "Creating application user: $$RABBITMQ_APP_USER"
+        rabbitmqadmin -H rabbitmq -u "$$RABBITMQ_ADMIN_USER" -p "$$RABBITMQ_ADMIN_PASS" declare user name="$$RABBITMQ_APP_USER" password="$$RABBITMQ_APP_PASS" tags=""
+        rabbitmqadmin -H rabbitmq -u "$$RABBITMQ_ADMIN_USER" -p "$$RABBITMQ_ADMIN_PASS" declare permission vhost="/" user="$$RABBITMQ_APP_USER" configure=".*" write=".*" read=".*"
+        echo "Application user created successfully!"
 
   postgres:
     image: postgres:16.0
@@ -167,9 +186,7 @@ secrets:
     file: ../.github_token
 
 volumes:
-  vault-data:
-    name: tunnel2_vault-data
-    external: true
+  # vault-data removed - Vault no longer used in dev environment
   postgres-data:
     name: tunnel2_postgres-data
   opensearch-data:

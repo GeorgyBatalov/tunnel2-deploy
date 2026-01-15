@@ -2,6 +2,13 @@
 .github_token
 vault-keys.json
 vault-cluster-*.json
+.env.secrets
+env/secrets/*.pem
+
+# TLS Certificates (not committed - generated locally)
+certs/*.crt
+certs/*.key
+certs/*.pfx
 
 # Environment files
 .env
