@@ -39,8 +39,8 @@ services:
 
   tunnel_entry:
     build:
-      context: ../tunnel2-proxy-entry
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: tunnel2-proxy-entry/Dockerfile
       secrets:
         - github_token
     ports:
@@ -127,8 +127,8 @@ services:
     #   - "12006:9090"  # gRPC
     restart: unless-stopped
     environment:
-      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=tunnel2;Username=admin;Password=admin123
-      - ConnectionStrings__HangfireConnection=Host=postgres;Port=5432;Database=tunnel2;Username=admin;Password=admin123
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=tunnel_legacy;Username=admin;Password=admin123
+      - ConnectionStrings__HangfireConnection=Host=postgres;Port=5432;Database=tunnel_legacy;Username=admin;Password=admin123
     networks:
       - tunnel2-network
 
