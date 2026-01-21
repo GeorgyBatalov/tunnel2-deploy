@@ -13,6 +13,7 @@ services:
     restart: unless-stopped
     env_file:
       - ./env/tunnel_server.env
+      - ./.env.secrets
     volumes:
       - ./env/secrets:/app/secrets:ro
       - ./certs:/app/certs:ro

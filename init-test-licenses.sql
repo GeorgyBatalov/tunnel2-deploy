@@ -3,11 +3,11 @@
 -- ===================================================================
 --
 -- IMPORTANT: This script creates licenses ONLY in cabinet-api database!
--- Database: tunnel2
+-- Database: tunnel_legacy
 -- Table: "Licenses" (Pascal case) - это таблица cabinet-api (СТАРАЯ БД)
 --
 -- Apply script:
---   cat init-test-licenses.sql | docker exec -i tunnel2_postgres psql -U admin -d tunnel2
+--   cat init-test-licenses.sql | docker exec -i tunnel2_postgres psql -U admin -d tunnel_legacy
 --
 -- tunnel_server will automatically fetch these licenses via LegacyFallback
 -- DO NOT apply this script to tunnel_server's "licenses" table!
@@ -128,6 +128,70 @@ VALUES (
     NOW()
 );
 
+-- License 7: PERSONAL_KEY_1_TEST
+-- LicenseType = 1 (PaidPersonal)
+-- TCP port 40007 from range 40000-40009 (docker-compose.yml line 51)
+INSERT INTO "Licenses" ("Id", "UserId", "Secret", "Endpoint", "PaidUntil", "TcpPort", "LicenseType", "CreatedDate", "ModifiedDate")
+VALUES (
+    '8b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e'::uuid,
+    '10000000-0000-0000-0000-000000000001'::uuid,
+    'PERSONAL_KEY_1_TEST',
+    'personal-app1',
+    NOW() + INTERVAL '5 years',  -- Paid for 5 years
+    40007,  -- Fixed TCP port from range 40000-40009
+    1,  -- LicenseType = 1 (PaidPersonal)
+    NOW(),
+    NOW()
+);
+
+-- License 8: PERSONAL_KEY_2_TEST
+-- LicenseType = 1 (PaidPersonal)
+-- TCP port 40008 from range 40000-40099
+INSERT INTO "Licenses" ("Id", "UserId", "Secret", "Endpoint", "PaidUntil", "TcpPort", "LicenseType", "CreatedDate", "ModifiedDate")
+VALUES (
+    '9c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f'::uuid,
+    '10000000-0000-0000-0000-000000000001'::uuid,
+    'PERSONAL_KEY_2_TEST',
+    'personal-app2',
+    NOW() + INTERVAL '5 years',  -- Paid for 5 years
+    40008,  -- Fixed TCP port from range 40000-40099
+    1,  -- LicenseType = 1 (PaidPersonal)
+    NOW(),
+    NOW()
+);
+
+-- License 9: PROFESSIONAL_KEY_6_TEST (human-readable subdomain)
+-- LicenseType = 2 (PaidProfessional)
+-- TCP port 40009 from range 40000-40099
+INSERT INTO "Licenses" ("Id", "UserId", "Secret", "Endpoint", "PaidUntil", "TcpPort", "LicenseType", "CreatedDate", "ModifiedDate")
+VALUES (
+    '0d4e5f6a-7b8c-9d0e-1f2a-3b4c5d6e7f8a'::uuid,
+    '10000000-0000-0000-0000-000000000001'::uuid,
+    'PROFESSIONAL_KEY_6_TEST',
+    'my-awesome-api',
+    NOW() + INTERVAL '5 years',  -- Paid for 5 years
+    40009,  -- Fixed TCP port from range 40000-40099
+    2,  -- LicenseType = 2 (PaidProfessional)
+    NOW(),
+    NOW()
+);
+
+-- License 10: PROFESSIONAL_KEY_7_TEST (another human-readable subdomain)
+-- LicenseType = 2 (PaidProfessional)
+-- TCP port 40010 from range 40000-40099
+INSERT INTO "Licenses" ("Id", "UserId", "Secret", "Endpoint", "PaidUntil", "TcpPort", "LicenseType", "CreatedDate", "ModifiedDate")
+VALUES (
+    '1e5f6a7b-8c9d-0e1f-2a3b-4c5d6e7f8a9b'::uuid,
+    '10000000-0000-0000-0000-000000000001'::uuid,
+    'PROFESSIONAL_KEY_7_TEST',
+    'prod-service',
+    NOW() + INTERVAL '5 years',  -- Paid for 5 years
+    40010,  -- Fixed TCP port from range 40000-40099
+    2,  -- LicenseType = 2 (PaidProfessional)
+    NOW(),
+    NOW()
+);
+
 -- Verification query (optional - comment out if not needed)
 SELECT
     l."Secret" as "License Key",
@@ -140,11 +204,15 @@ FROM "Licenses" l
 JOIN "Users" u ON l."UserId" = u."Id"
 WHERE l."Secret" IN (
     'FREE_KEY_TEST',
+    'PERSONAL_KEY_1_TEST',
+    'PERSONAL_KEY_2_TEST',
     'PROFESSIONAL_KEY_1_TEST',
     'PROFESSIONAL_KEY_2_TEST',
     'PROFESSIONAL_KEY_3_TEST',
     'PROFESSIONAL_KEY_4_TEST',
     'PROFESSIONAL_KEY_5_TEST',
+    'PROFESSIONAL_KEY_6_TEST',
+    'PROFESSIONAL_KEY_7_TEST',
     'PROFESSIONAL_KEY_CLI_E2E_TEST'
 )
 ORDER BY l."LicenseType", l."Secret";
