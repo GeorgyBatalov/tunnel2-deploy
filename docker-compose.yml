@@ -34,6 +34,7 @@ services:
       dockerfile: Dockerfile
       secrets:
         - github_token
+    container_name: tunnel2-tunnel_entry-1
     ports:
       - "12004:80"   # HTTP entry point (external traffic) - MOVED TO 12004 FOR HAProxy
       - "12001:12001"   # Uplink port (client connections)
